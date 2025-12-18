@@ -1,101 +1,119 @@
-```
-# PingMe – Real-Time Anonymous Chat
 
-PingMe is a privacy-first real-time chat application for instant, anonymous conversations. Create temporary rooms, share a link, and communicate—no signup required.
+# PingMe
+
+Privacy-first real-time anonymous chat rooms.
+
+PingMe allows users to instantly create temporary chat rooms, share a link, and communicate in real time without accounts, emails, or long-term data storage.
 
 Live demo: https://pingme-realtime.vercel.app/
 
+---
+
 ## Overview
 
-PingMe focuses on simplicity and speed. Users can create a room, share the link, and start communicating in real time. All communication is ephemeral and backed by an in-memory data store to avoid long-term persistence.
+PingMe is designed for fast, ephemeral communication. It uses a serverless architecture and an in-memory Redis-based realtime layer to deliver low-latency messaging while avoiding persistent storage.
+
+---
 
 ## Features
 
-- Instant room creation with unique room IDs  
-- Join rooms via shareable links  
-- Real-time communication with low latency  
-- Anonymous usage with no authentication  
-- Auto-expiring rooms (configurable TTL)
-- Ephemeral data storage with automatic cleanup  
-- Clean, minimalist interface with dark/light mode
-- Optimized for performance and simplicity  
+- Create temporary chat rooms instantly
+- Join rooms via shareable links
+- Real-time message delivery with low latency
+- Anonymous usage with no authentication
+- Automatic message expiration using TTL
+- Clean interface with dark and light mode support
 
-## How It Works
+---
 
-1. A user creates a room, generating a unique room ID.  
-2. The room link is shared with another user.  
-3. Messages are transmitted in real time via Redis pub/sub with WebSocket-like behavior.  
-4. Data is stored temporarily and discarded after the session ends.  
+## Architecture
+
+- Next.js App Router handles all client requests
+- Upstash Redis manages realtime events and room state
+- Messages are stored in memory with TTL-based cleanup
+- No long-term persistence or user data storage
+
+---
+
+## Privacy Model
+
+- No user accounts or identifiers
+- No emails, usernames, or passwords
+- Messages expire automatically
+- Room data exists only during the session
+- No analytics or message content tracking
+
+---
 
 ## Tech Stack
 
-Frontend  
-- Next.js (App Router)  
-- React  
-- TypeScript  
-- Tailwind CSS  
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+- Bun
+- Upstash Redis
+- Vercel
 
-Backend / Realtime  
-- Next.js API routes  
-- Upstash Redis (REST-based realtime access)  
-
-Tooling & Deployment  
-- Bun  
-- Vercel  
+---
 
 ## Environment Variables
 
-The following environment variables are required:
+Create a `.env` file with the following values:
 
-```
+```bash
 UPSTASH_REDIS_REST_URL=your_upstash_redis_url
 UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
-```
+````
 
-In Vercel, values must be added without quotes.
+When adding these in Vercel, values must be set without quotes.
+
+---
 
 ## Local Development
 
 Clone the repository:
 
-```
-git clone git@github.com:marsh15/pingme.git
+```bash
+git clone https://github.com/marsh15/pingme.git
 cd pingme
 ```
 
 Install dependencies:
 
-```
+```bash
 bun install
 ```
 
-Create a `.env` file and add the required environment variables.
-
 Run the development server:
 
-```
+```bash
 bun dev
 ```
 
-The app will be available at `http://localhost:3000`.
+The application will be available at [http://localhost:3000](http://localhost:3000).
 
-## Deployment
+---
 
-The project is optimized for deployment on Vercel.
+## Usage
 
-1. Push the repository to GitHub  
-2. Import the project into Vercel  
-3. Add the required environment variables  
-4. Deploy  
+1. Open the application in your browser
+2. Create a new room
+3. Share the generated link
+4. Chat in real time until the session expires
 
-## Roadmap
 
-- [ ] End-to-end encryption
-- [ ] File sharing support
-- [ ] Mobile app (React Native)
-- [ ] Custom room expiry times
+---
+
+## Limitations
+
+* Designed for short-lived communication only
+* Not intended for large public chat rooms
+* End-to-end encryption is not implemented
+
+
+---
 
 ## License
 
 MIT License
-```
+
