@@ -1,7 +1,7 @@
-```md
-# PingMe – Real-Time Anonymous Rooms
+```
+# PingMe – Real-Time Anonymous Chat
 
-PingMe is a privacy-first real-time web application that lets users instantly create and join temporary rooms for communication. No accounts, no emails, and no personal data are required. Rooms are lightweight, fast, and designed for short-lived, secure interactions.
+PingMe is a privacy-first real-time chat application for instant, anonymous conversations. Create temporary rooms, share a link, and communicate—no signup required.
 
 Live demo: https://pingme-realtime.vercel.app/
 
@@ -15,14 +15,16 @@ PingMe focuses on simplicity and speed. Users can create a room, share the link,
 - Join rooms via shareable links  
 - Real-time communication with low latency  
 - Anonymous usage with no authentication  
+- Auto-expiring rooms (configurable TTL)
 - Ephemeral data storage with automatic cleanup  
+- Clean, minimalist interface with dark/light mode
 - Optimized for performance and simplicity  
 
 ## How It Works
 
 1. A user creates a room, generating a unique room ID.  
 2. The room link is shared with another user.  
-3. Messages and events are handled in real time using a Redis-backed realtime layer.  
+3. Messages are transmitted in real time via Redis pub/sub with WebSocket-like behavior.  
 4. Data is stored temporarily and discarded after the session ends.  
 
 ## Tech Stack
@@ -46,10 +48,8 @@ Tooling & Deployment
 The following environment variables are required:
 
 ```
-
 UPSTASH_REDIS_REST_URL=your_upstash_redis_url
 UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
-
 ```
 
 In Vercel, values must be added without quotes.
@@ -59,18 +59,14 @@ In Vercel, values must be added without quotes.
 Clone the repository:
 
 ```
-
-git clone [git@github.com](mailto:git@github.com):marsh15/pingme.git
+git clone git@github.com:marsh15/pingme.git
 cd pingme
-
 ```
 
 Install dependencies:
 
 ```
-
 bun install
-
 ```
 
 Create a `.env` file and add the required environment variables.
@@ -78,9 +74,7 @@ Create a `.env` file and add the required environment variables.
 Run the development server:
 
 ```
-
 bun dev
-
 ```
 
 The app will be available at `http://localhost:3000`.
@@ -94,8 +88,14 @@ The project is optimized for deployment on Vercel.
 3. Add the required environment variables  
 4. Deploy  
 
+## Roadmap
+
+- [ ] End-to-end encryption
+- [ ] File sharing support
+- [ ] Mobile app (React Native)
+- [ ] Custom room expiry times
+
 ## License
 
 MIT License
 ```
-
