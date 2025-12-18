@@ -1,9 +1,9 @@
 
-# pingMe
+# pingme
 
 Privacy-first real-time anonymous chat rooms.
 
-pingMe allows users to instantly create temporary chat rooms, share a link, and communicate in real time without accounts, emails, or long-term data storage.
+pingme allows users to instantly create temporary chat rooms, share a link, and communicate in real time without accounts, emails, or long-term data storage.
 
 Live demo: https://pingme-realtime.vercel.app/
 
@@ -11,7 +11,7 @@ Live demo: https://pingme-realtime.vercel.app/
 
 ## Overview
 
-pingMe is designed for fast, ephemeral communication. It uses a serverless architecture and an in-memory Redis-based realtime layer to deliver low-latency messaging while avoiding persistent storage.
+pingme is designed for fast, ephemeral communication. It uses a serverless architecture and an in-memory Redis-based realtime layer to deliver low-latency messaging while avoiding persistent storage.
 
 ---
 
