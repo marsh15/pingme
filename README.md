@@ -115,5 +115,6 @@ The application will be available at [http://localhost:3000](http://localhost:30
 
 ## License
 
-MIT License
+This project is licensed under the MIT License.  
+See the LICENSE file for details.
 
