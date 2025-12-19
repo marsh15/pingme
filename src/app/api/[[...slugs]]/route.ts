@@ -21,18 +21,47 @@ const rooms = new Elysia({ prefix: "/room" })
 
         return { roomID }
     })
-    .post('/join', async ({ body, cookie }) => {
+    .post('/join', async ({ body, cookie, set }) => {
         const { roomID } = body
+
+        // 1. Existence Check
+        const exists = await redis.exists(`meta:${roomID}`)
+        if (!exists) {
+            set.status = 404
+            return "Room not found"
+        }
+
+        // 2. Idempotency Check
+        const existingToken = cookie["x-auth-token"]?.value
+        if (existingToken) {
+            const isMember = await redis.sismember(`connected:${roomID}`, existingToken)
+            if (isMember) {
+                return { token: existingToken }
+            }
+        }
+
+        // 3. Capacity Check
+        const count = await redis.scard(`connected:${roomID}`)
+        if (count >= 2) {
+            set.status = 409
+            return "Room is full"
+        }
+
+        // 4. Join & Sync TTL
         const token = nanoid()
+        const ttl = await redis.ttl(`meta:${roomID}`)
+        const validTTL = ttl > 0 ? ttl : ROOM_TTL_SECONDS
 
         await redis.sadd(`connected:${roomID}`, token)
-        await redis.expire(`connected:${roomID}`, ROOM_TTL_SECONDS)
+        await redis.expire(`connected:${roomID}`, validTTL)
 
         cookie["x-auth-token"].set({
             value: token,
             path: "/",
             httpOnly: true,
-            maxAge: ROOM_TTL_SECONDS,
+            maxAge: validTTL,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax'
         })
 
         return { token }

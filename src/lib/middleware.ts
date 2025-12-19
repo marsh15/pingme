@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { redis } from "@/lib/redis"
-import { nanoid } from "nanoid"
 
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname
@@ -30,18 +29,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/?error=room-full", req.url))
     }
 
-    const newToken = nanoid()
-    await redis.sadd(`connected:${roomID}`, newToken)
-
-    const response = NextResponse.next()
-    response.cookies.set("x-auth-token", newToken, {
-      path: "/",
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-    })
-
-    return response
+    return NextResponse.next()
   } catch (error) {
     return NextResponse.next()
   }
