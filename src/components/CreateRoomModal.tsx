@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useRouter } from "next/navigation"
 import { Copy, Check, ArrowRight, Loader2 } from "lucide-react"
@@ -46,9 +46,11 @@ export function CreateRoomModal({ isOpen, onClose }: CreateRoomModalProps) {
         }
     }
 
-    if (isOpen && !roomId && !loading) {
-        createRoom()
-    }
+    useEffect(() => {
+        if (isOpen && !roomId && !loading) {
+            createRoom()
+        }
+    }, [isOpen])
 
     return (
         <AnimatePresence>
