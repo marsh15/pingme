@@ -185,9 +185,15 @@ const Step = ({ number, title, desc }: { number: string, title: string, desc: st
   </motion.div>
 )
 
-export default function LandingPage() {
+// --- Main Page Component ---
+
+import { Suspense } from "react"
+
+const LandingPageContent = () => {
   const [createOpen, setCreateOpen] = useState(false)
   const [joinOpen, setJoinOpen] = useState(false)
+
+  // Custom Hook Logic
   const { scrollYProgress } = useScroll()
   const scaleX = useSpring(scrollYProgress, {
     stiffness: 100,
@@ -519,5 +525,13 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
+  )
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense fallback={null}>
+      <LandingPageContent />
+    </Suspense>
   )
 }
