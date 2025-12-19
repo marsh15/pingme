@@ -95,6 +95,14 @@ const rooms = new Elysia({ prefix: "/room" })
             username: z.string().optional()
         })
     })
+    .get(
+        "/exists",
+        async ({ query }) => {
+            const exists = await redis.exists(`meta:${query.roomID}`)
+            return { exists: exists === 1 }
+        },
+        { query: z.object({ roomID: z.string() }) }
+    )
     .use(authMiddleware)
     .get(
         "/ttl",
@@ -104,14 +112,7 @@ const rooms = new Elysia({ prefix: "/room" })
         },
         { query: z.object({ roomID: z.string() }) }
     )
-    .get(
-        "/exists",
-        async ({ query }) => {
-            const exists = await redis.exists(`meta:${query.roomID}`)
-            return { exists: exists === 1 }
-        },
-        { query: z.object({ roomID: z.string() }) }
-    )
+
     .delete(
         "/",
         async ({ auth }) => {
