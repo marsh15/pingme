@@ -1,11 +1,113 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { motion, useScroll, useSpring, useMotionValue, useTransform } from "framer-motion"
+import { motion, useScroll, useSpring, useMotionValue, useTransform, AnimatePresence } from "framer-motion"
 import { Shield, Zap, Timer, Lock, ArrowRight, MousePointer2, ChevronDown } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 import { CreateRoomModal } from "@/components/CreateRoomModal"
 import { JoinRoomModal } from "@/components/JoinRoomModal"
 import { ThemeToggle } from "@/components/ThemeToggle"
+
+// --- Custom Hooks & Logic ---
+
+const useMouse = () => {
+  const mouseX = useMotionValue(0)
+  const mouseY = useMotionValue(0)
+  const [isHovering, setIsHovering] = useState(false)
+  const [isClicking, setIsClicking] = useState(false)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseX.set(e.clientX)
+      mouseY.set(e.clientY)
+
+      // Interaction Check
+      const target = e.target as HTMLElement
+      const isInteractive =
+        target.tagName === "BUTTON" ||
+        target.tagName === "A" ||
+        target.closest("button") ||
+        target.closest("a") ||
+        target.getAttribute("role") === "button"
+
+      setIsHovering(!!isInteractive)
+    }
+
+    const handleMouseDown = () => setIsClicking(true)
+    const handleMouseUp = () => setIsClicking(false)
+
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("mousedown", handleMouseDown)
+    window.addEventListener("mouseup", handleMouseUp)
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mousedown", handleMouseDown)
+      window.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [mouseX, mouseY])
+
+  return { mouseX, mouseY, isHovering, isClicking }
+}
+
+const CursorFollower = () => {
+  const { mouseX, mouseY, isHovering, isClicking } = useMouse()
+
+  // Smooth spring physics for laggy follower
+  const smoothX = useSpring(mouseX, { damping: 40, stiffness: 300, mass: 0.8 })
+  const smoothY = useSpring(mouseY, { damping: 40, stiffness: 300, mass: 0.8 })
+
+  return (
+    <>
+      {/* Main Dot - Snappy & Vibrant */}
+      <motion.div
+        className="fixed top-0 left-0 w-3 h-3 bg-[var(--primary)] rounded-full pointer-events-none z-[9999] shadow-sm"
+        style={{ x: mouseX, y: mouseY, translateX: "-50%", translateY: "-50%" }}
+      />
+
+      {/* Jelly Follower - Amorphous & Gradient */}
+      <motion.div
+        className="fixed top-0 left-0 pointer-events-none z-[9998] opacity-60 blur-[1px]"
+        style={{
+          x: smoothX,
+          y: smoothY,
+          translateX: "-50%",
+          translateY: "-50%",
+          background: "linear-gradient(135deg, var(--primary), #8b5cf6)", // Primary to Purple
+        }}
+        animate={{
+          width: isHovering ? 50 : 32,
+          height: isHovering ? 50 : 32,
+          scale: isClicking ? 0.8 : 1,
+          // Morphing Border Radius
+          borderRadius: isHovering
+            ? ["40% 60% 70% 30% / 40% 50% 60% 50%", "60% 40% 30% 70% / 60% 50% 40% 50%", "40% 60% 70% 30% / 40% 50% 60% 50%"] // Faster/Tighter when active
+            : ["30% 70% 70% 30% / 30% 30% 70% 70%", "70% 30% 30% 70% / 70% 70% 30% 30%", "30% 70% 70% 30% / 30% 30% 70% 70%"], // Lazy blob
+          rotate: [0, 90, 180, 270, 360]
+        }}
+        transition={{
+          // Morph transition
+          borderRadius: {
+            duration: 4,
+            ease: "easeInOut",
+            repeat: Infinity,
+            repeatType: "mirror"
+          },
+          // Rotate transition
+          rotate: {
+            duration: 8,
+            ease: "linear",
+            repeat: Infinity
+          },
+          // Size/Scale snap
+          width: { type: "spring", stiffness: 300, damping: 20 },
+          height: { type: "spring", stiffness: 300, damping: 20 },
+          scale: { type: "spring", stiffness: 400, damping: 25 }
+        }}
+      />
+    </>
+  )
+}
 
 // --- Components ---
 
@@ -93,6 +195,43 @@ export default function LandingPage() {
     restDelta: 0.001
   })
 
+  // Notification Logic
+  const searchParams = useSearchParams()
+  const [notification, setNotification] = useState<{ title: string, msg: string, type: 'success' | 'error' | 'alert' } | null>(null)
+
+  useEffect(() => {
+    const destroyed = searchParams.get("destroyed")
+    const error = searchParams.get("error")
+
+    if (destroyed) {
+      setNotification({
+        title: "Protocol Complete",
+        msg: "Channel has been permanently incinerated. No traces remain.",
+        type: "alert"
+      })
+      window.history.replaceState(null, "", "/")
+    } else if (error === "room-not-found") {
+      setNotification({
+        title: "Connection Failed",
+        msg: "Target frequency unreachable. Channel may have expired.",
+        type: "error"
+      })
+      window.history.replaceState(null, "", "/")
+    } else if (error === "room-full") {
+      setNotification({
+        title: "Access Denied",
+        msg: "Channel capacity at maximum. Uplink rejected.",
+        type: "error"
+      })
+      window.history.replaceState(null, "", "/")
+    }
+
+    if (destroyed || error) {
+      const timer = setTimeout(() => setNotification(null), 6000)
+      return () => clearTimeout(timer)
+    }
+  }, [searchParams])
+
   const mouseX = useMotionValue(0)
   const mouseY = useMotionValue(0)
 
@@ -118,6 +257,52 @@ export default function LandingPage() {
         className="fixed top-0 left-0 right-0 h-1 bg-[var(--primary)] origin-left z-50"
         style={{ scaleX }}
       />
+
+      {/* Custom Cursor Follower */}
+      <CursorFollower />
+
+      {/* Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: -50, x: "-50%" }}
+            className="fixed top-8 left-1/2 z-[100] w-full max-w-md px-4 pointer-events-none"
+          >
+            <div className={`
+              pointer-events-auto flex items-start gap-4 p-4 rounded-xl border backdrop-blur-md shadow-2xl
+              ${notification.type === 'alert' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : ''}
+              ${notification.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-500' : ''}
+              ${notification.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : ''}
+            `}>
+              <div className={`
+                p-2 rounded-lg shrink-0
+                ${notification.type === 'alert' ? 'bg-amber-500/20' : ''}
+                ${notification.type === 'error' ? 'bg-red-500/20' : ''}
+                ${notification.type === 'success' ? 'bg-emerald-500/20' : ''}
+              `}>
+                {notification.type === 'alert' && <Shield className="h-5 w-5" />}
+                {notification.type === 'error' && <Lock className="h-5 w-5" />}
+                {notification.type === 'success' && <Zap className="h-5 w-5" />}
+              </div>
+              <div className="flex-1 pt-0.5">
+                <h3 className="font-bold text-sm mb-1 uppercase tracking-wide">{notification.title}</h3>
+                <p className="text-xs opacity-90 leading-relaxed">{notification.msg}</p>
+              </div>
+              <button
+                onClick={() => setNotification(null)}
+                className="p-1 hover:bg-[var(--text)]/10 rounded transition-colors"
+              >
+                <div className="h-4 w-4 relative">
+                  <div className="absolute inset-0 rotate-45 bg-current h-[1px] top-1/2" />
+                  <div className="absolute inset-0 -rotate-45 bg-current h-[1px] top-1/2" />
+                </div>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ThemeToggle />
       <div className="fixed inset-0 grain-overlay z-[1] pointer-events-none mix-blend-overlay opacity-30" />

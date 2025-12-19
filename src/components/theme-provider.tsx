@@ -10,7 +10,6 @@ const ThemeContext = createContext<{
 }>({ theme: "light", toggleTheme: () => { } })
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
-    // Default to light as per "minimalist pure" initial vibe, but respect system/storage
     const [theme, setTheme] = useState<Theme>("light")
     const [mounted, setMounted] = useState(false)
 
@@ -36,9 +35,6 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         setTheme((prev) => (prev === "light" ? "dark" : "light"))
     }
 
-    // Prevent flash by rendering nothing until mounted? Or allow render with default?
-    // For landing page, it's better to render default to avoid layout shift, but colors might snap.
-    // We'll return children always, but effect handles the class.
     return (
         <ThemeContext.Provider value={{ theme, toggleTheme }}>
             {children}

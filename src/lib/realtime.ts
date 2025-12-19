@@ -1,29 +1,16 @@
-import z from "zod"
 import { redis } from "@/lib/redis"
-import { InferRealtimeEvents, Realtime } from "@upstash/realtime" 
+import { InferRealtimeEvents, Realtime } from "@upstash/realtime"
+import { realtimeSchema, type Message } from "@/lib/schemas"
 
-const message = z.object({
-            id: z.string(),
-            sender: z.string(),
-            text: z.string(),
-            timeStamp: z.number(),
-            roomID: z.string(),
-            token: z.string().optional(),
-})
-    
-
-const schema = {
-    chat: {
-        message,
-        destroy: z.object({
-            isDestroyed: z.literal(true),
-        }),
+export const realtime = new Realtime({
+    schema: realtimeSchema,
+    redis,
+    maxDurationSecs: 300,
+    history: {
+        maxLength: 50,
+        expireAfterSecs: 600,
     },
-}
-
-
-export const realtime= new Realtime({ schema, redis})
+})
 
 export type RealtimeEvents = InferRealtimeEvents<typeof realtime>
-
-export type Message = z.infer<typeof message>
+export type { Message }

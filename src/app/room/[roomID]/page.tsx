@@ -1,15 +1,16 @@
 "use client"
 
 import { useUsername } from "@/hooks/use-username"
+import { useCountdown } from "@/hooks/use-countdown"
 import { client } from "@/lib/client"
 import { useRealtime } from "@/lib/realtime-client"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { format } from "date-fns"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Copy, Check, Send, Bomb, Clock, ChevronLeft, Shield } from "lucide-react"
+import { Copy, Check, Send, Bomb, Clock, ChevronLeft, Shield, Lock } from "lucide-react"
 import { ThemeToggle } from "@/components/ThemeToggle"
+import { MessageBubble } from "@/components/MessageBubble"
 
 function formatTimeRemaining(seconds: number) {
   const mins = Math.floor(seconds / 60)
@@ -30,58 +31,60 @@ const Page = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const [copyStatus, setCopyStatus] = useState("idle")
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
   const [hasJoined, setHasJoined] = useState(false)
+  const [typingUsers, setTypingUsers] = useState<string[]>([])
+  const [lastConnection, setLastConnection] = useState<{ user: string, action: string } | null>(null)
   const queryClient = useQueryClient()
 
-  // 1. Fetch TTL
   const { data: ttlData } = useQuery({
     queryKey: ["ttl", roomID],
     queryFn: async () => {
       const res = await client.api.room.ttl.get({ query: { roomID } })
+      if (res.error) throw res.error
       return res.data
     },
+    enabled: hasJoined,
+    retry: 2,
+    refetchOnWindowFocus: true,
+    refetchInterval: 5000
   })
 
-  // 2. Sync TTL
-  useEffect(() => {
-    if (ttlData?.ttl !== undefined) setTimeRemaining(ttlData.ttl)
-  }, [ttlData])
+  const timeRemaining = useCountdown(
+    ttlData?.ttl !== undefined ? ttlData.ttl : null
+  )
 
-  // 3. Countdown
   useEffect(() => {
-    if (timeRemaining === null || timeRemaining < 0) return
-
-    if (timeRemaining === 0) {
+    if (timeRemaining === null) return
+    if (timeRemaining <= 0) {
       router.push("/?destroyed=true")
-      return
     }
-
-    const interval = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => clearInterval(interval)
   }, [timeRemaining, router])
 
-  // 4. Join
+  const joinedRef = useRef(false)
   useEffect(() => {
     const fn = async () => {
-      if (roomID) {
-        const { error } = await client.api.room.join.post({ roomID })
-        if (!error) setHasJoined(true)
+      if (roomID && !joinedRef.current) {
+        joinedRef.current = true
+        // Initial join ensures status is active and timer starts
+        const { data, error } = await client.api.room.join.post({
+          roomID,
+          username
+        })
+        if (!error && data) {
+          setHasJoined(true)
+        } else {
+          console.error("Join failed:", error)
+          if ((error?.status as unknown as number) === 404) {
+            router.push("/?error=room-not-found")
+          } else if ((error?.status as unknown as number) === 409) {
+            router.push("/?error=room-full")
+          }
+        }
       }
     }
-    fn()
-  }, [roomID])
+    if (roomID) fn()
+  }, [roomID, router])
 
-  // 5. Messages
   const { data: messages, refetch, isLoading } = useQuery({
     queryKey: ["messages", roomID],
     queryFn: async () => {
@@ -99,18 +102,15 @@ const Page = () => {
     }
   }, [messages])
 
-  // 7. Send
   const { mutate: sendMessage, isPending } = useMutation({
     mutationFn: async ({ text }: { text: string }) => {
       await client.api.messages.post({ sender: username, text }, { query: { roomID } })
-      setInput("")
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["messages", roomID] })
     },
   })
 
-  // 8. Realtime
   useRealtime({
     channels: [roomID],
     onData: (data: any) => {
@@ -120,10 +120,35 @@ const Page = () => {
       if (data.event === "chat.destroy") {
         router.push("/?destroyed=true")
       }
+      if (data.event === "chat.typing") {
+        const { username: typer, isTyping } = data
+        if (typer === username) return
+
+        setTypingUsers(prev => {
+          if (isTyping && !prev.includes(typer)) return [...prev, typer]
+          if (!isTyping) return prev.filter(u => u !== typer)
+          return prev
+        })
+      }
+      if (data.event === "chat.connection") {
+        const { username: connectedUser, action } = data
+        if (connectedUser !== username) {
+          setLastConnection({ user: connectedUser, action })
+          setTimeout(() => setLastConnection(null), 3000)
+        }
+      }
     },
   })
 
-  // 9. Destroy
+  // Typing debounce logic
+  useEffect(() => {
+    if (!hasJoined) return
+    const timeout = setTimeout(() => {
+      client.api.messages.typing.post({ isTyping: input.length > 0, username }, { query: { roomID } })
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [input, hasJoined, username, roomID])
+
   const { mutate: destroyRoom, isPending: isDestroying } = useMutation({
     mutationFn: async () => {
       await client.api.room.delete(null, { query: { roomID } })
@@ -137,8 +162,10 @@ const Page = () => {
   }
 
   const handleSend = () => {
-    if (input.trim()) {
-      sendMessage({ text: input })
+    if (input.trim() && !isPending) {
+      const messageText = input.trim()
+      setInput("")
+      sendMessage({ text: messageText })
       inputRef.current?.focus()
     }
   }
@@ -150,34 +177,47 @@ const Page = () => {
     <main className="flex h-screen flex-col overflow-hidden bg-[var(--bg)] text-[var(--text)] selection:bg-[var(--primary)] selection:text-[var(--bg)] font-sans transition-colors duration-500">
 
       {/* HEADER */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/80 px-4 backdrop-blur-xl z-10 transition-colors duration-500">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/80 px-4 backdrop-blur-xl z-20 transition-colors duration-500 shadow-sm">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push('/')} className="rounded-full p-2 hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors">
+          <button
+            onClick={() => router.push('/')}
+            className="rounded-full p-2 hover:bg-[var(--elevated)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors active:scale-95"
+          >
             <ChevronLeft className="h-5 w-5" />
           </button>
 
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="font-bold tracking-tight">PINGME</span>
-              <span className="rounded bg-[var(--primary)]/5 px-1.5 py-0.5 text-[10px] font-bold text-[var(--primary)] uppercase tracking-wider">Secure</span>
+              <span className="font-bold tracking-tight text-sm md:text-base">PINGME</span>
+              <div className="flex items-center gap-1 rounded-full bg-[var(--primary)]/10 px-2 py-0.5 text-[10px] font-bold text-[var(--primary)] uppercase tracking-wider border border-[var(--primary)]/20">
+                <Lock className="h-2.5 w-2.5" />
+                <span>E2EE</span>
+              </div>
             </div>
-            <div onClick={copyLink} className="flex items-center gap-1.5 cursor-pointer group">
-              <span className="text-xs font-mono text-[var(--text-muted)] group-hover:text-[var(--text)] transition-colors">ID: {roomID}</span>
-              {copyStatus === "copied" ? <Check className="h-3 w-3 text-[var(--primary)]" /> : <Copy className="h-3 w-3 text-[var(--text-muted)] group-hover:text-[var(--text)]" />}
+
+            {/* Green ID Style */}
+            <div
+              onClick={copyLink}
+              className="flex items-center gap-1.5 cursor-pointer group mt-1 bg-[#10b981]/10 px-2 py-0.5 rounded-lg border border-[#10b981]/20 hover:bg-[#10b981]/20 transition-all"
+            >
+              <span className="text-xs font-mono font-bold text-[#10b981] tracking-widest">{roomID}</span>
+              {copyStatus === "copied" ? <Check className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3 text-[#10b981] opacity-50 group-hover:opacity-100" />}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <ThemeToggle className="relative h-9 w-9 border border-[var(--border)] bg-transparent shadow-none" />
+          <div className="hidden md:block">
+            <ThemeToggle className="relative h-9 w-9 border border-[var(--border)] bg-transparent shadow-none" />
+          </div>
 
-          {/* Timer Badge */}
-          <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 border transition-all duration-500 ${isCritical ? "bg-red-500/10 border-red-500/30 text-red-500 animate-pulse" :
-            isWarning ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-500" :
-              "bg-[var(--elevated)] border-[var(--border)] text-[var(--text-muted)]"
+          {/* Yellow Timer Badge */}
+          <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 border transition-all duration-500 font-mono text-sm font-bold shadow-sm ${isCritical ? "bg-red-500/10 border-red-500/30 text-red-500 animate-pulse ring-1 ring-red-500/50" :
+            // Default to Yellow/Orange as requested
+            "bg-[#f59e0b]/10 border-[#f59e0b]/30 text-[#f59e0b]"
             }`}>
-            <Clock className="h-3.5 w-3.5" />
-            <span className="font-mono text-sm font-bold">
+            <Clock className={`h-3.5 w-3.5 ${isPending || !hasJoined ? "animate-pulse opacity-50" : ""}`} />
+            <span>
               {timeRemaining !== null ? formatTimeRemaining(timeRemaining) : "--:--"}
             </span>
           </div>
@@ -185,68 +225,81 @@ const Page = () => {
           <button
             onClick={() => destroyRoom()}
             disabled={isDestroying}
-            className="group relative flex h-9 w-9 items-center justify-center rounded-full bg-[var(--elevated)] text-[var(--text-muted)] hover:bg-red-500 hover:text-white transition-all overflow-hidden"
-            title="Destroy Room"
+            className="group relative flex h-9 w-9 items-center justify-center rounded-full bg-[var(--elevated)] text-[var(--text-muted)] hover:bg-red-500 hover:text-white transition-all overflow-hidden border border-[var(--border)] hover:border-red-600 shadow-sm active:scale-95"
+            title="Self-Destruct Protocol"
           >
-            <div className="absolute inset-0 bg-red-600 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-            <Bomb className="h-4 w-4 relative z-10" />
+            <Bomb className="h-4 w-4 relative z-10 transition-transform group-hover:shake" />
           </button>
         </div>
       </header>
 
       {/* CHAT AREA */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden bg-cover bg-center">
+        <div className="absolute inset-0 opacity-[0.02] pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle at center, var(--text) 1px, transparent 1px)',
+            backgroundSize: '24px 24px'
+          }}
+        />
+
         <div
           ref={scrollContainerRef}
-          className="h-full overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-[var(--secondary)] scrollbar-track-transparent"
+          className="h-full overflow-y-auto px-4 py-6 scrollbar-thin scrollbar-thumb-[var(--border)] scrollbar-track-transparent"
         >
-          <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end space-y-6">
+          <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-end space-y-6">
 
-            {/* Empty State */}
-            {!isLoading && messages?.messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-20 opacity-50">
-                <Shield className="h-16 w-16 text-[var(--text-muted)] mb-4" />
-                <p className="text-[var(--text-muted)] text-sm">No messages yet. Start the encrypted session.</p>
+            {/* System Info */}
+            <div className="flex justify-center mb-8">
+              <div className="flex flex-col items-center gap-2 max-w-xs text-center">
+                <div className="h-10 w-10 rounded-full bg-[var(--elevated)] flex items-center justify-center text-[var(--primary)] border border-[var(--border)] shadow-sm">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div className="text-xs font-medium text-[var(--text-muted)] bg-[var(--surface)]/50 backdrop-blur-sm px-3 py-1.5 rounded-full border border-[var(--border)]">
+                  Messages are end-to-end encrypted. No trace logs.
+                </div>
               </div>
-            )}
+            </div>
+
+            {/* Connection Notification */}
+            <AnimatePresence>
+              {lastConnection && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="flex justify-center mb-4"
+                >
+                  <div className="text-xs font-bold text-[var(--text-muted)] bg-[var(--elevated)]/80 backdrop-blur px-3 py-1 rounded-full border border-[var(--border)] flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    {lastConnection.user} established uplink
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {isLoading && (
               <div className="flex justify-center p-8">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
               </div>
             )}
 
+            {/* Messages */}
             <AnimatePresence initial={false}>
-              {messages?.messages.map((msg) => {
-                const isMe = msg.isMe
-                return (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    className={`flex w-full ${isMe ? "justify-end" : "justify-start"}`}
-                  >
-                    <div className={`flex max-w-[70%] flex-col ${isMe ? "items-end" : "items-start"}`}>
-                      <div className="mb-1 flex items-center gap-2 px-1">
-                        {!isMe && (
-                          <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-wider">{msg.sender}</span>
-                        )}
-                      </div>
-
-                      <div className={`relative px-4 py-3 text-[15px] leading-relaxed shadow-sm ${isMe
-                        ? "rounded-[18px] rounded-br-[4px] bg-[var(--primary)] text-[var(--bg)]"
-                        : "rounded-[18px] rounded-bl-[4px] bg-[var(--surface)] border border-[var(--border)] text-[var(--text)]"
-                        }`}>
-                        {msg.text}
-                      </div>
-
-                      <span className="mt-1 px-1 text-[10px] font-medium text-[var(--text-muted)]">
-                        {format(msg.timeStamp, "HH:mm")}
-                      </span>
-                    </div>
-                  </motion.div>
-                )
-              })}
+              {messages?.messages.map((msg) => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  className="w-full"
+                >
+                  <MessageBubble
+                    message={msg}
+                    isMe={msg.isMe}
+                    username={username}
+                    roomId={roomID}
+                  />
+                </motion.div>
+              ))}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
@@ -254,34 +307,56 @@ const Page = () => {
       </div>
 
       {/* INPUT AREA */}
-      <div className="shrink-0 bg-[var(--surface)] p-4 border-t border-[var(--border)] transition-colors duration-500">
+      <div className="shrink-0 bg-[var(--surface)]/90 backdrop-blur-xl p-4 md:p-6 border-t border-[var(--border)] z-20">
         <div className="mx-auto max-w-3xl">
-          <div className="relative flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-2 ring-1 ring-[var(--border)] focus-within:ring-[var(--primary)]/20 focus-within:border-[var(--primary)]/20 transition-all shadow-sm">
+          <div className="relative flex items-end gap-2 rounded-[1.5rem] border border-[var(--border-strong)] bg-[var(--bg)] p-1.5 pl-4 shadow-sm transition-all duration-300 focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 focus-within:shadow-md">
             <input
               ref={inputRef}
               autoFocus
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleSend()
+                if (e.key === "Enter" && !e.shiftKey && !isPending) {
+                  e.preventDefault()
+                  handleSend()
+                }
               }}
               placeholder="Type an encrypted message..."
-              className="flex-1 bg-transparent px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--text-muted)] outline-none"
+              className="flex-1 bg-transparent py-3.5 text-sm md:text-base text-[var(--text)] placeholder-[var(--text-muted)] outline-none min-h-[48px]"
               autoComplete="off"
+              disabled={isPending}
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || isPending}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--bg)] shadow-lg shadow-[var(--shadow)] transition-all hover:scale-105 hover:bg-[var(--primary-hover)] disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none"
+              className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--bg)] shadow-sm transition-all hover:scale-105 hover:bg-[var(--primary-hover)] active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none"
             >
-              <Send className="h-5 w-5" />
+              <Send className="h-5 w-5 ml-0.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </button>
           </div>
 
-          <div className="mt-2 text-center">
-            <p className="flex items-center justify-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
-              End-to-end encrypted connection
+          <div className="mt-3 flex justify-between items-center px-2">
+            <div className="h-4">
+              <AnimatePresence>
+                {typingUsers.length > 0 && (
+                  <motion.p
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="text-xs font-bold text-[var(--primary)] flex items-center gap-1"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] animate-bounce" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] animate-bounce delay-75" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--primary)] animate-bounce delay-150" />
+                    <span className="ml-1 opacity-80">{typingUsers.join(", ")} is typing...</span>
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)] opacity-60 font-semibold">
+              <Lock className="h-2.5 w-2.5" />
+              Secure Tunnel Active
             </p>
           </div>
         </div>

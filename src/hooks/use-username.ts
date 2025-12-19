@@ -20,8 +20,22 @@ const generateUsername = () => {
 
 export const useUsername = () => {
   const [username, setUsername] = useState("");
+
   useEffect(() => {
-    setUsername(generateUsername())
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        setUsername(stored)
+      } else {
+        const newName = generateUsername()
+        localStorage.setItem(STORAGE_KEY, newName)
+        setUsername(newName)
+      }
+    } catch (e) {
+      // Fallback if localStorage is disabled/unavailable
+      setUsername(generateUsername())
+    }
   }, [])
+
   return username
 }
